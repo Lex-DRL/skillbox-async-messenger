@@ -1,6 +1,7 @@
 """
 Серверное приложение для соединений
 """
+import collections as col
 import asyncio
 from asyncio import transports
 
@@ -43,6 +44,7 @@ class ClientProtocol(asyncio.Protocol):
 
             self.login = login
             self.print_back(f"Привет, {self.login}!")
+            self.send_history()
         else:
             self.send_message(decoded)
 
@@ -52,10 +54,15 @@ class ClientProtocol(asyncio.Protocol):
 
     def send_message(self, message: str):
         format_string = f"<{self.login}> {message}"
+        self.server.history.append(format_string)
 
         for client in self.server.clients:
             if client.login != self.login:
                 client.print_back(format_string)
+
+    def send_history(self):
+        """Print a few last messages on the client."""
+        self.print_back('\n'.join(self.server.history))
 
     def connection_made(self, transport: transports.Transport):
         self.transport = transport
@@ -72,9 +79,13 @@ class ClientProtocol(asyncio.Protocol):
 
 class Server:
     clients: list
+    history: col.deque
+
+    _history_len = 10
 
     def __init__(self):
         self.clients = []
+        self.history = col.deque([], maxlen=self._history_len)
 
     def create_protocol(self):
         return ClientProtocol(self)
