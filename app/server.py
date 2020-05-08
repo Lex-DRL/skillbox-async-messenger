@@ -14,27 +14,48 @@ class ClientProtocol(asyncio.Protocol):
         self.server = server
         self.login = None
 
+    _login_prefix = "login:"
+
     def data_received(self, data: bytes):
         decoded = data.decode()
         print(decoded)
 
         if self.login is None:
-            # login:User
-            if decoded.startswith("login:"):
-                self.login = decoded.replace("login:", "").replace("\r\n", "")
-                self.transport.write(
-                    f"Привет, {self.login}!".encode()
+            # assuming 'login:User'
+
+            if not decoded.startswith(self._login_prefix):
+                self.print_back(
+                    f"Сперва нужно ввести имя пользователя в формате (без кавычек):\n"
+                    f"{self._login_prefix}'имя пользователя'"
                 )
+                return
+
+            login = decoded.replace(self._login_prefix, "").strip()  # strip() is cleaner then manual \r\n replacement
+
+            if not login:
+                self.print_back("Необходимо ввести имя пользователя")
+                return
+
+            if any(login == c.login for c in self.server.clients):
+                self.print_back(f"Логин {login} занят, попробуйте другой")
+                self.connection_lost(None)
+                return
+
+            self.login = login
+            self.print_back(f"Привет, {self.login}!")
         else:
             self.send_message(decoded)
 
-    def send_message(self, message):
+    def print_back(self, message: str):
+        """Print a message in the client"""
+        self.transport.write(message.encode())
+
+    def send_message(self, message: str):
         format_string = f"<{self.login}> {message}"
-        encoded = format_string.encode()
 
         for client in self.server.clients:
             if client.login != self.login:
-                client.transport.write(encoded)
+                client.print_back(format_string)
 
     def connection_made(self, transport: transports.Transport):
         self.transport = transport
@@ -42,7 +63,10 @@ class ClientProtocol(asyncio.Protocol):
         print("Соединение установлено")
 
     def connection_lost(self, exception):
-        self.server.clients.remove(self)
+        try:
+            self.server.clients.remove(self)
+        except ValueError:
+            pass
         print("Соединение разорвано")
 
 
